@@ -308,7 +308,11 @@ func processTransferCommand() {
 	amountBigInt := big.NewInt(int64(amount * params.GWei))
 	amountBigInt = amountBigInt.Mul(amountBigInt, big.NewInt(params.GWei))
 	tx, _ := types.SignTx(types.NewTransaction(state.nonce, receiverAddress, uint32(shardID), amountBigInt, params.TxGas, nil, inputData), types.HomesteadSigner{}, senderPriKey)
-	wallet.SubmitTransaction(tx, walletNode, uint32(shardID), stopChan)
+	if err := wallet.SubmitTransaction(
+		tx, walletNode, uint32(shardID), stopChan,
+	); err != nil {
+		fmt.Printf("Could not submit transfer transaction: %s\n", err)
+	}
 }
 
 func convertBalanceIntoReadableFormat(balance *big.Int) string {
