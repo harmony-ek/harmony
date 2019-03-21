@@ -286,11 +286,6 @@ func processTransferCommand() {
 	}
 
 	receiverAddress := common.HexToAddress(receiver)
-	if len(receiverAddress) != 20 {
-		fmt.Println("The receiver address is not valid.")
-		async = false
-		return
-	}
 
 	// Generate transaction
 	walletNode := wallet.CreateWalletNode()
