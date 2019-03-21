@@ -9,11 +9,14 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"math/big"
 	"os"
 	"path"
 	"strconv"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/common"
 	crypto2 "github.com/ethereum/go-ethereum/crypto"
@@ -56,6 +59,13 @@ var (
 	transferAmountPtr    = transferCommand.Float64("amount", 0, "Specify the amount to transfer")
 	transferShardIDPtr   = transferCommand.Int("shardID", -1, "Specify the shard ID for the transfer")
 	transferInputDataPtr = transferCommand.String("inputData", "", "Base64-encoded input data to embed in the transaction")
+
+	// New contract subcommand
+	newContractCommand    = flag.NewFlagSet("new-contract", flag.ExitOnError)
+	newContractFromPtr    = newContractCommand.String("from", "0", "Sender account address or index")
+	newContractAmountPtr  = newContractCommand.Float64("amount", 0, "Amount to deposit into the contract account; default 0")
+	newContractShardIDPtr = newContractCommand.Int("shardID", -1, "ID of the shard to upload to")
+	newContractCodePtr    = newContractCommand.String("code", "", "Hex-encoded contract bytecode")
 
 	freeTokenCommand    = flag.NewFlagSet("getFreeToken", flag.ExitOnError)
 	freeTokenAddressPtr = freeTokenCommand.String("address", "", "Specify the account address to receive the free token")
@@ -104,6 +114,11 @@ func main() {
 		fmt.Println("        --amount         - The amount of token to transfer")
 		fmt.Println("        --shardID        - The shard Id for the transfer")
 		fmt.Println("        --inputData      - Base64-encoded input data to embed in the transaction")
+		fmt.Println("    8. new-contract")
+		fmt.Println("        --from           - The sender account's address or index in the local keystore")
+		fmt.Println("        --amount         - The amount of token to put into the contract account")
+		fmt.Println("        --shardID        - The shard Id for the transfer")
+		fmt.Println("        --code           - Hex-encoded contract code")
 		os.Exit(1)
 	}
 
@@ -132,6 +147,8 @@ func main() {
 		go processGetFreeToken()
 	case "transfer":
 		go processTransferCommand()
+	case "new-contract":
+		go processNewContractCommand()
 	default:
 		fmt.Printf("Unknown action: %s\n", os.Args[1])
 		flag.PrintDefaults()
@@ -249,6 +266,51 @@ func loadAccount(indexOrHexAddr string) (common.Address, *ecdsa.PrivateKey) {
 	return common.Address{}, nil
 }
 
+func gweiToStr(gwei *big.Int) string {
+	eth := new(big.Int).Set(gwei)
+	eth, bigFrac := eth.DivMod(
+		eth, new(big.Int).SetInt64(params.Ether), new(big.Int),
+	)
+	frac := bigFrac.Uint64()
+	for frac != 0 && frac%10 == 0 {
+		frac /= 10
+	}
+	return fmt.Sprintf("%s.%d", eth, frac)
+}
+
+func accountState(
+	walletNode *node.Node, address common.Address, shardID uint32,
+) (balance *big.Int, nonce uint64, err error) {
+	states := FetchBalance(address, walletNode)
+	if states == nil {
+		return nil, 0, errors.New("cannot fetch balance sheet")
+	}
+	state, ok := states[shardID]
+	if !ok {
+		return nil, 0, fmt.Errorf("no account in shard %v", shardID)
+	}
+	return state.balance, state.nonce, nil
+}
+
+func checkBalance(
+	walletNode *node.Node, address common.Address, shardID uint32,
+	amount *big.Int,
+) error {
+	states := FetchBalance(address, walletNode)
+	if states == nil {
+		return errors.New("cannot fetch balance sheet")
+	}
+	state, ok := states[shardID]
+	if !ok {
+		return fmt.Errorf("no account in shard %v", shardID)
+	}
+	if state.balance.Cmp(amount) < 0 {
+		return fmt.Errorf("insufficient account balance %s < requested %s",
+			gweiToStr(state.balance), gweiToStr(amount))
+	}
+	return nil
+}
+
 func processTransferCommand() {
 	transferCommand.Parse(os.Args[2:])
 	if !transferCommand.Parsed() {
@@ -257,7 +319,7 @@ func processTransferCommand() {
 	sender := *transferSenderPtr
 	receiver := *transferReceiverPtr
 	amount := *transferAmountPtr
-	shardID := *transferShardIDPtr
+	shardIDInt := *transferShardIDPtr
 	base64InputData := *transferInputDataPtr
 
 	inputData, err := base64.StdEncoding.DecodeString(base64InputData)
@@ -268,11 +330,17 @@ func processTransferCommand() {
 		return
 	}
 
-	if shardID == -1 {
+	if shardIDInt == -1 {
 		fmt.Println("Please specify the shard ID for the transfer (e.g. --shardID=0)")
 		async = false
 		return
 	}
+    if shardIDInt < 0 || shardIDInt > math.MaxUint32 {
+    	fmt.Printf("shard ID %d out of range", shardIDInt)
+    	async = false
+    	return
+	}
+	shardID := uint32(shardIDInt)
 	if amount <= 0 {
 		fmt.Println("Please specify positive amount to transfer")
 		async = false
@@ -286,6 +354,76 @@ func processTransferCommand() {
 	}
 
 	receiverAddress := common.HexToAddress(receiver)
+
+	// Generate tx
+	walletNode := wallet.CreateWalletNode()
+	bal, nonce, err := accountState(walletNode, senderAddress, shardID)
+	if err != nil {
+		fmt.Printf("error loading account balance: %s\n", err)
+		async = false
+		return
+	}
+	amountBigFloat := new(big.Float).Mul(
+		big.NewFloat(amount), big.NewFloat(params.Ether),
+	)
+	amountBigInt, _ := amountBigFloat.Int(nil)
+	if bal.Cmp(amountBigInt) < 0 {
+		fmt.Printf("insufficient account balance %s < requested %s\n",
+			gweiToStr(bal), gweiToStr(amountBigInt))
+		async = false
+		return
+	}
+
+	tx := types.NewTransaction(
+		nonce, receiverAddress, shardID, amountBigInt, params.TxGas, nil,
+		inputData,
+	)
+	tx, err = types.SignTx(tx, types.HomesteadSigner{}, senderPriKey)
+	if err != nil {
+		fmt.Printf("Could not sign transaction: %s\n", err)
+		async = false
+		return
+	}
+	if err := wallet.SubmitTransaction(
+		tx, walletNode, uint32(shardID), stopChan,
+	); err != nil {
+		fmt.Printf("Could not submit transfer tx: %s\n", err)
+	}
+}
+
+func processNewContractCommand() {
+	newContractCommand.Parse(os.Args[2:])
+	if !newContractCommand.Parsed() {
+		fmt.Println("Failed to parse flags")
+	}
+	sender := *newContractFromPtr
+	amount := *newContractAmountPtr
+	shardID := *newContractShardIDPtr
+	hexCode := *newContractCodePtr
+
+	code, err := hex.DecodeString(hexCode)
+	if err != nil {
+		fmt.Printf("Cannot hex-decode contract code (%s): %s\n", hexCode, err)
+		async = false
+		return
+	}
+
+	if shardID == -1 {
+		fmt.Println("Please specify the shard ID for the transfer (e.g. --shardID=0)")
+		async = false
+		return
+	}
+	if amount < 0 {
+		fmt.Println("Deposit amount may not be negative")
+		async = false
+		return
+	}
+	senderAddress, senderPriKey := loadAccount(sender)
+	if senderPriKey != nil {
+		fmt.Printf("Cannot load sender account %v\n", sender)
+		async = false
+		return
+	}
 
 	// Generate transaction
 	walletNode := wallet.CreateWalletNode()
@@ -307,11 +445,17 @@ func processTransferCommand() {
 
 	amountBigInt := big.NewInt(int64(amount * params.GWei))
 	amountBigInt = amountBigInt.Mul(amountBigInt, big.NewInt(params.GWei))
-	tx, _ := types.SignTx(types.NewTransaction(state.nonce, receiverAddress, uint32(shardID), amountBigInt, params.TxGas, nil, inputData), types.HomesteadSigner{}, senderPriKey)
+	tx, _ := types.SignTx(
+		types.NewContractCreation(
+			state.nonce, uint32(shardID), amountBigInt, params.TxGas, nil, code,
+		),
+		types.HomesteadSigner{},
+		senderPriKey,
+	)
 	if err := wallet.SubmitTransaction(
 		tx, walletNode, uint32(shardID), stopChan,
 	); err != nil {
-		fmt.Printf("Could not submit transfer transaction: %s\n", err)
+		fmt.Printf("Could not submit new-contract transaction: %s\n", err)
 	}
 }
 
