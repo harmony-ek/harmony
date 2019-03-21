@@ -234,6 +234,21 @@ func processGetFreeToken() {
 	async = false
 }
 
+func loadAccount(indexOrHexAddr string) (common.Address, *ecdsa.PrivateKey) {
+	addresses := ReadAddresses()
+	keys := readPrivateKeys()
+	for index, addr := range addresses {
+		if addr.Hex() == indexOrHexAddr {
+			return addr, keys[index]
+		}
+	}
+	index, err := strconv.Atoi(indexOrHexAddr)
+	if err == nil && index >= 0 && index < len(keys) {
+		return addresses[index], keys[index]
+	}
+	return common.Address{}, nil
+}
+
 func processTransferCommand() {
 	transferCommand.Parse(os.Args[2:])
 	if !transferCommand.Parsed() {
@@ -263,31 +278,9 @@ func processTransferCommand() {
 		async = false
 		return
 	}
-	priKeys := readPrivateKeys()
-	if len(priKeys) == 0 {
-		fmt.Println("No imported account to use.")
-		async = false
-		return
-	}
-	senderIndex, err := strconv.Atoi(sender)
-	addresses := ReadAddresses()
-	if err != nil {
-		senderIndex = -1
-		for i, address := range addresses {
-			if address.Hex() == sender {
-				senderIndex = i
-				break
-			}
-		}
-		if senderIndex == -1 {
-			fmt.Println("The specified sender account does not exist in the wallet.")
-			async = false
-			return
-		}
-	}
-
-	if senderIndex >= len(priKeys) {
-		fmt.Println("Sender account index out of bounds.")
+	senderAddress, senderPriKey := loadAccount(sender)
+	if senderPriKey != nil {
+		fmt.Printf("Cannot load sender account %v\n", sender)
 		async = false
 		return
 	}
@@ -300,8 +293,6 @@ func processTransferCommand() {
 	}
 
 	// Generate transaction
-	senderPriKey := priKeys[senderIndex]
-	senderAddress := addresses[senderIndex]
 	walletNode := wallet.CreateWalletNode()
 	shardIDToAccountState := FetchBalance(senderAddress, walletNode)
 
