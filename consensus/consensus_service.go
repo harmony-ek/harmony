@@ -176,6 +176,12 @@ func (consensus *Consensus) DebugPrintValidators() {
 
 // UpdatePublicKeys updates the PublicKeys variable, protected by a mutex
 func (consensus *Consensus) UpdatePublicKeys(pubKeys []*bls.PublicKey) int {
+	consensus.mutex.Lock()
+	defer consensus.mutex.Unlock()
+	return consensus.updatePublicKeys(pubKeys)
+}
+
+func (consensus *Consensus) updatePublicKeys(pubKeys []*bls.PublicKey) int {
 	consensus.pubKeyLock.Lock()
 	consensus.PublicKeys = append(pubKeys[:0:0], pubKeys...)
 	consensus.CommitteeAddresses = map[common.Address]bool{}
@@ -333,6 +339,12 @@ func (consensus *Consensus) GetNilSigsArray() []*bls.Sign {
 
 // ResetState resets the state of the consensus
 func (consensus *Consensus) ResetState() {
+	consensus.mutex.Lock()
+	defer consensus.mutex.Unlock()
+	consensus.resetState()
+}
+
+func (consensus *Consensus) resetState() {
 	consensus.state = Finished
 	consensus.phase = Announce
 	consensus.prepareSigs = map[common.Address]*bls.Sign{}
@@ -382,6 +394,12 @@ func (consensus *Consensus) AddPeers(peers []*p2p.Peer) int {
 // RemovePeers will remove the peer from the validator list and PublicKeys
 // It will be called when leader/node lost connection to peers
 func (consensus *Consensus) RemovePeers(peers []p2p.Peer) int {
+	consensus.mutex.Lock()
+	defer consensus.mutex.Unlock()
+	return consensus.removePeers(peers)
+}
+
+func (consensus *Consensus) removePeers(peers []p2p.Peer) int {
 	// early return as most of the cases no peers to remove
 	if len(peers) == 0 {
 		return 0
@@ -416,7 +434,7 @@ func (consensus *Consensus) RemovePeers(peers []p2p.Peer) int {
 	}
 
 	if count2 > 0 {
-		consensus.UpdatePublicKeys(newList)
+		consensus.updatePublicKeys(newList)
 
 		// Send out Pong messages to everyone in the shard to keep the publickeys in sync
 		// Or the shard won't be able to reach consensus if public keys are mismatch
@@ -551,9 +569,7 @@ func (consensus *Consensus) checkConsensusMessage(message *msg_pb.Message, publi
 	// just ignore consensus check for the first time when node join
 	if consensus.ignoreViewIDCheck {
 		consensus.viewID = viewID
-		consensus.mutex.Lock()
 		consensus.ignoreViewIDCheck = false
-		consensus.mutex.Unlock()
 		return nil
 	} else if viewID != consensus.viewID {
 		utils.GetLogInstance().Warn("Wrong consensus Id", "myViewId", consensus.viewID, "theirViewId", viewID, "consensus", consensus)
@@ -574,9 +590,7 @@ func (consensus *Consensus) checkViewID(msg *PbftMessage) error {
 	if consensus.ignoreViewIDCheck {
 		consensus.viewID = msg.ViewID
 		consensus.LeaderPubKey = msg.SenderPubkey
-		consensus.mutex.Lock()
 		consensus.ignoreViewIDCheck = false
-		consensus.mutex.Unlock()
 		return nil
 	} else if msg.ViewID > consensus.viewID {
 		utils.GetLogger().Warn("view id is low", "myViewId", consensus.viewID, "theirViewId", msg.ViewID)

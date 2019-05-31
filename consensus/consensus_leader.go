@@ -96,6 +96,9 @@ func (consensus *Consensus) WaitForNewBlock(blockChannel chan *types.Block, stop
 
 // ProcessMessageLeader dispatches consensus message for the leader.
 func (consensus *Consensus) ProcessMessageLeader(payload []byte) {
+	consensus.mutex.Lock()
+	defer consensus.mutex.Unlock()
+
 	message := &msg_pb.Message{}
 	err := protobuf.Unmarshal(payload, message)
 
@@ -158,9 +161,6 @@ func (consensus *Consensus) processPrepareMessage(message *msg_pb.Message) {
 
 	prepareSigs := consensus.prepareSigs
 	prepareBitmap := consensus.prepareBitmap
-
-	consensus.mutex.Lock()
-	defer consensus.mutex.Unlock()
 
 	if !consensus.IsValidatorInCommittee(validatorAddress) {
 		utils.GetLogInstance().Error("Invalid validator", "validatorAddress", validatorAddress)
@@ -234,9 +234,6 @@ func (consensus *Consensus) processCommitMessage(message *msg_pb.Message) {
 	validatorAddress := common.BytesToAddress(addrBytes[:])
 
 	commitSig := consensusMsg.Payload
-
-	consensus.mutex.Lock()
-	defer consensus.mutex.Unlock()
 
 	if !consensus.IsValidatorInCommittee(validatorAddress) {
 		utils.GetLogInstance().Error("Invalid validator", "validatorAddress", validatorAddress)
@@ -320,7 +317,7 @@ func (consensus *Consensus) processCommitMessage(message *msg_pb.Message) {
 		explorer.GetStorageInstance(consensus.leader.IP, consensus.leader.Port, true).Dump(&blockObj, consensus.viewID)
 
 		// Reset state to Finished, and clear other data.
-		consensus.ResetState()
+		consensus.resetState()
 		consensus.viewID++
 
 		consensus.OnConsensusDone(&blockObj)

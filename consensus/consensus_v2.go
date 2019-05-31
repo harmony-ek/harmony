@@ -240,8 +240,6 @@ func (consensus *Consensus) onPrepare(msg *msg_pb.Message) {
 	prepareSigs := consensus.prepareSigs
 	prepareBitmap := consensus.prepareBitmap
 
-	consensus.mutex.Lock()
-	defer consensus.mutex.Unlock()
 	if len(prepareSigs) >= consensus.Quorum() {
 		// already have enough signatures
 		return
@@ -333,9 +331,6 @@ func (consensus *Consensus) onPrepared(msg *msg_pb.Message) {
 		return
 	}
 
-	consensus.mutex.Lock()
-	defer consensus.mutex.Unlock()
-
 	// TODO: add 2f+1 signature checking
 	if !aggSig.VerifyHash(mask.AggregatePublic, blockHash[:]) {
 		myBlockHash := common.Hash{}
@@ -412,9 +407,6 @@ func (consensus *Consensus) onCommit(msg *msg_pb.Message) {
 	validatorAddress := common.BytesToAddress(addrBytes[:])
 
 	commitSig := recvMsg.Payload
-
-	consensus.mutex.Lock()
-	defer consensus.mutex.Unlock()
 
 	if !consensus.IsValidatorInCommittee(validatorAddress) {
 		utils.GetLogInstance().Error("Invalid validator", "validatorAddress", validatorAddress)
@@ -546,9 +538,6 @@ func (consensus *Consensus) onCommitted(msg *msg_pb.Message) {
 		return
 	}
 
-	consensus.mutex.Lock()
-	defer consensus.mutex.Unlock()
-
 	// TODO: add 2f+1 signature checking
 	prepareMultiSigAndBitmap := append(consensus.aggregatedPrepareSig.Serialize(), consensus.prepareBitmap.Bitmap...)
 	if !aggSig.VerifyHash(mask.AggregatePublic, prepareMultiSigAndBitmap) {
@@ -670,76 +659,92 @@ func (consensus *Consensus) Start(blockChannel chan *types.Block, stopChan chan 
 		for {
 			select {
 			case <-ticker.C:
-				if !consensus.PubKey.IsEqual(consensus.LeaderPubKey) {
-					for k, v := range consensus.consensusTimeout {
-						if consensus.mode.Mode() == Syncing {
-							v.Stop()
+				func() {
+					consensus.mutex.Lock()
+					defer consensus.mutex.Unlock()
+					if !consensus.PubKey.IsEqual(consensus.LeaderPubKey) {
+						for k, v := range consensus.consensusTimeout {
+							if consensus.mode.Mode() == Syncing {
+								v.Stop()
+							}
+							if !v.CheckExpire() {
+								continue
+							}
+							if k == timeoutConsensus {
+								utils.GetLogInstance().Debug("ops", "phase", k, "mode", consensus.mode.Mode())
+								consensus.startViewChange(consensus.viewID + 1)
+								break
+							} else if k == timeoutViewChange {
+								utils.GetLogInstance().Debug("ops", "phase", k, "mode", consensus.mode.Mode())
+								viewID := consensus.mode.ViewID()
+								consensus.startViewChange(viewID + 1)
+								break
+							}
 						}
-						if !v.CheckExpire() {
-							continue
-						}
-						if k == timeoutConsensus {
-							utils.GetLogInstance().Debug("ops", "phase", k, "mode", consensus.mode.Mode())
-							consensus.startViewChange(consensus.viewID + 1)
-							break
-						} else if k == timeoutViewChange {
-							utils.GetLogInstance().Debug("ops", "phase", k, "mode", consensus.mode.Mode())
-							viewID := consensus.mode.ViewID()
-							consensus.startViewChange(viewID + 1)
-							break
-						}
-					}
 
-				}
+					}
+				}()
 
 			case <-consensus.syncReadyChan:
 				func() {
+					consensus.mutex.Lock()
+					defer consensus.mutex.Unlock()
 					consensus.mode.mux.Lock()
 					defer consensus.mode.mux.Unlock()
 					if consensus.mode.mode != Syncing {
 						return
 					}
 					consensus.mode.mode = Syncing
-					consensus.SetBlockNum(consensus.ChainReader.CurrentHeader().Number.Uint64() + 1)
+					consensus.blockNum = consensus.ChainReader.CurrentHeader().Number.Uint64() + 1
 					consensus.ignoreViewIDCheck = true
 				}()
 
 			case newBlock := <-blockChannel:
-				utils.GetLogInstance().Info("receive newBlock", "blockNum", newBlock.NumberU64())
-				if consensus.ShardID == 0 {
-					// TODO ek/rj - re-enable this after fixing DRand
-					//if core.IsEpochBlock(newBlock) { // Only beacon chain do randomness generation
-					//	// Receive pRnd from DRG protocol
-					//	utils.GetLogInstance().Debug("[DRG] Waiting for pRnd")
-					//	pRndAndBitmap := <-consensus.PRndChannel
-					//	utils.GetLogInstance().Debug("[DRG] Got pRnd", "pRnd", pRndAndBitmap)
-					//	pRnd := [32]byte{}
-					//	copy(pRnd[:], pRndAndBitmap[:32])
-					//	bitmap := pRndAndBitmap[32:]
-					//	vrfBitmap, _ := bls_cosi.NewMask(consensus.PublicKeys, consensus.leader.ConsensusPubKey)
-					//	vrfBitmap.SetMask(bitmap)
-					//
-					//	// TODO: check validity of pRnd
-					//	newBlock.AddRandPreimage(pRnd)
-					//}
+				func() {
+					consensus.mutex.Lock()
+					defer consensus.mutex.Unlock()
 
-					rnd, blockHash, err := consensus.GetNextRnd()
-					if err == nil {
-						// Verify the randomness
-						_ = blockHash
-						utils.GetLogInstance().Info("Adding randomness into new block", "rnd", rnd)
-						newBlock.AddRandSeed(rnd)
-					} else {
-						utils.GetLogInstance().Info("Failed to get randomness", "error", err)
+					utils.GetLogInstance().Info("receive newBlock", "blockNum", newBlock.NumberU64())
+					if consensus.ShardID == 0 {
+						// TODO ek/rj - re-enable this after fixing DRand
+						//if core.IsEpochBlock(newBlock) { // Only beacon chain do randomness generation
+						//	// Receive pRnd from DRG protocol
+						//	utils.GetLogInstance().Debug("[DRG] Waiting for pRnd")
+						//	pRndAndBitmap := <-consensus.PRndChannel
+						//	utils.GetLogInstance().Debug("[DRG] Got pRnd", "pRnd", pRndAndBitmap)
+						//	pRnd := [32]byte{}
+						//	copy(pRnd[:], pRndAndBitmap[:32])
+						//	bitmap := pRndAndBitmap[32:]
+						//	vrfBitmap, _ := bls_cosi.NewMask(consensus.PublicKeys, consensus.leader.ConsensusPubKey)
+						//	vrfBitmap.SetMask(bitmap)
+						//
+						//	// TODO: check validity of pRnd
+						//	newBlock.AddRandPreimage(pRnd)
+						//}
+
+						rnd, blockHash, err := consensus.GetNextRnd()
+						if err == nil {
+							// Verify the randomness
+							_ = blockHash
+							utils.GetLogInstance().Info("Adding randomness into new block", "rnd", rnd)
+							newBlock.AddRandSeed(rnd)
+						} else {
+							utils.GetLogInstance().Info("Failed to get randomness", "error", err)
+						}
 					}
-				}
 
-				startTime = time.Now()
-				utils.GetLogInstance().Debug("STARTING CONSENSUS", "numTxs", len(newBlock.Transactions()), "consensus", consensus, "startTime", startTime, "publicKeys", len(consensus.PublicKeys))
-				consensus.tryAnnounce(newBlock)
+					startTime = time.Now()
+					utils.GetLogInstance().Debug("STARTING CONSENSUS", "numTxs", len(newBlock.Transactions()), "consensus", consensus, "startTime", startTime, "publicKeys", len(consensus.PublicKeys))
+					consensus.tryAnnounce(newBlock)
+				}()
 
 			case msg := <-consensus.MsgChan:
-				consensus.handleMessageUpdate(msg)
+				func() {
+					consensus.mutex.Lock()
+					defer consensus.mutex.Unlock()
+					consensus.handleMessageUpdate(msg)
+				}()
+
 			case <-stopChan:
 				return
 			}

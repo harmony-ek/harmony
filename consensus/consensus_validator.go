@@ -17,6 +17,9 @@ import (
 
 // ProcessMessageValidator dispatches validator's consensus message.
 func (consensus *Consensus) ProcessMessageValidator(payload []byte) {
+	consensus.mutex.Lock()
+	defer consensus.mutex.Unlock()
+
 	message := &msg_pb.Message{}
 	err := protobuf.Unmarshal(payload, message)
 	if err != nil {
@@ -52,9 +55,7 @@ func (consensus *Consensus) processAnnounceMessage(message *msg_pb.Message) {
 	block := consensusMsg.Payload
 
 	// Add block to received block cache
-	consensus.mutex.Lock()
 	consensus.blocksReceived[viewID] = &BlockConsensusStatus{block, consensus.state}
-	consensus.mutex.Unlock()
 
 	copy(consensus.blockHash[:], blockHash[:])
 	consensus.block = block
@@ -144,9 +145,6 @@ func (consensus *Consensus) processPreparedMessage(message *msg_pb.Message) {
 		return
 	}
 
-	consensus.mutex.Lock()
-	defer consensus.mutex.Unlock()
-
 	// Verify the multi-sig for prepare phase
 	deserializedMultiSig := bls.Sign{}
 	err = deserializedMultiSig.Deserialize(multiSig)
@@ -210,9 +208,6 @@ func (consensus *Consensus) processCommittedMessage(message *msg_pb.Message) {
 		utils.GetLogInstance().Warn("IncorrectResponse attacked")
 		return
 	}
-
-	consensus.mutex.Lock()
-	defer consensus.mutex.Unlock()
 
 	// Verify the multi-sig for commit phase
 	deserializedMultiSig := bls.Sign{}
