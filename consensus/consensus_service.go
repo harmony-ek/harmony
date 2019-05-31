@@ -449,13 +449,6 @@ func (consensus *Consensus) removePeers(peers []p2p.Peer) int {
 	return count2
 }
 
-// ToggleConsensusCheck flip the flag of whether ignore viewID check during consensus process
-func (consensus *Consensus) ToggleConsensusCheck() {
-	consensus.mutex.Lock()
-	defer consensus.mutex.Unlock()
-	consensus.ignoreViewIDCheck = !consensus.ignoreViewIDCheck
-}
-
 // GetPeerByAddress the validator peer based on validator Address.
 // TODO: deprecate this, as validators network info shouldn't known to everyone
 func (consensus *Consensus) GetPeerByAddress(validatorAddress string) *p2p.Peer {
