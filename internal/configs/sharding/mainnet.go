@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	mainnetEpochBlock1 = 344064 // 21 * 2^14
-	blocksPerShard     = 16384  // 2^14
+	mainnetEpochBlock1 = 2700  // 6h (with 8s/block)
+	blocksPerShard     = 16384 // 2^14
 	mainnetV1Epoch     = 1
 )
 
