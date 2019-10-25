@@ -3,6 +3,7 @@ go:
   - 1.12
 go_import_path: github.com/harmony-one/harmony
 install:
+  - false # for quick testing
   - export GO111MODULE=on
   - export GOPATH=$HOME/gopath
   - export CGO_CPPFLAGS="-I$GOPATH/src/github.com/harmony-one/bls/include -I$GOPATH/src/github.com/harmony-one/mcl/include"
@@ -31,6 +32,8 @@ after_success:
   - chmod +x send.sh
   - ./send.sh success $WEBHOOK_URL
 after_failure:
+  - git show --stat HEAD
+  - git show --stat HEAD^2 || :
   - wget https://raw.githubusercontent.com/DiscordHooks/travis-ci-discord-webhook/master/send.sh
   - chmod +x send.sh
   - ./send.sh failure $WEBHOOK_URL
