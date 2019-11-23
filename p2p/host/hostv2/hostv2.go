@@ -16,7 +16,9 @@ import (
 
 	libp2p "github.com/libp2p/go-libp2p"
 	libp2p_crypto "github.com/libp2p/go-libp2p-core/crypto"
+	libp2p_discovery "github.com/libp2p/go-libp2p-discovery"
 	libp2p_host "github.com/libp2p/go-libp2p-host"
+	libp2p_kad_dht "github.com/libp2p/go-libp2p-kad-dht"
 	libp2p_peer "github.com/libp2p/go-libp2p-peer"
 	libp2p_peerstore "github.com/libp2p/go-libp2p-peerstore"
 	libp2p_pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -220,7 +222,13 @@ func New(self *p2p.Peer, priKey libp2p_crypto.PrivKey) (*HostV2, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot create libp2p host")
 	}
-	pubsub, err := libp2p_pubsub.NewGossipSub(ctx, p2pHost)
+	dht, err := libp2p_kad_dht.New(ctx, p2pHost)
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot create libp2p DHT")
+	}
+	disc := libp2p_discovery.NewRoutingDiscovery(dht)
+	pubsub, err := libp2p_pubsub.NewGossipSub(ctx, p2pHost,
+		libp2p_pubsub.WithDiscovery(disc))
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot create libp2p pubsub")
 	}
