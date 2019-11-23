@@ -210,7 +210,7 @@ func (host *HostV2) Peerstore() libp2p_peerstore.Peerstore {
 }
 
 // New creates a host for p2p communication
-func New(self *p2p.Peer, priKey libp2p_crypto.PrivKey) *HostV2 {
+func New(self *p2p.Peer, priKey libp2p_crypto.PrivKey) (*HostV2, error) {
 	// TODO: Convert to zerolog or internal logger interface
 	logger := utils.Logger()
 	// TODO – use WithCancel for orderly host teardown (which we don't have yet)
@@ -219,9 +219,13 @@ func New(self *p2p.Peer, priKey libp2p_crypto.PrivKey) *HostV2 {
 		libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", self.Port)),
 		libp2p.Identity(priKey),
 	)
-	catchError(err)
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot create libp2p host")
+	}
 	pubsub, err := libp2p_pubsub.NewGossipSub(ctx, p2pHost)
-	catchError(err)
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot create libp2p pubsub")
+	}
 
 	self.PeerID = p2pHost.ID()
 
@@ -243,7 +247,7 @@ func New(self *p2p.Peer, priKey libp2p_crypto.PrivKey) *HostV2 {
 		Str("PubKey", self.ConsensusPubKey.SerializeToHexStr()).
 		Msg("HostV2 is up!")
 
-	return h
+	return h, nil
 }
 
 // GetID returns ID.Pretty
