@@ -15,7 +15,7 @@ import (
 	"github.com/harmony-one/harmony/p2p"
 
 	libp2p "github.com/libp2p/go-libp2p"
-	libp2p_crypto "github.com/libp2p/go-libp2p-crypto"
+	libp2p_crypto "github.com/libp2p/go-libp2p-core/crypto"
 	libp2p_host "github.com/libp2p/go-libp2p-host"
 	libp2p_peer "github.com/libp2p/go-libp2p-peer"
 	libp2p_peerstore "github.com/libp2p/go-libp2p-peerstore"

@@ -15,7 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/harmony-one/bls/ffi/go/bls"
-	p2p_crypto "github.com/libp2p/go-libp2p-crypto"
+	p2p_crypto "github.com/libp2p/go-libp2p-core/crypto"
 )
 
 var lock sync.Mutex

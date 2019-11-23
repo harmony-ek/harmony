@@ -3,7 +3,7 @@ package p2pimpl
 import (
 	"net"
 
-	libp2p_crypto "github.com/libp2p/go-libp2p-crypto"
+	libp2p_crypto "github.com/libp2p/go-libp2p-core/crypto"
 
 	"github.com/harmony-one/harmony/internal/utils"
 	"github.com/harmony-one/harmony/p2p"
