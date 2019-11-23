@@ -211,9 +211,7 @@ func (host *HostV2) Peerstore() libp2p_peerstore.Peerstore {
 
 // New creates a host for p2p communication
 func New(self *p2p.Peer, priKey libp2p_crypto.PrivKey) (*HostV2, error) {
-	// TODO: Convert to zerolog or internal logger interface
 	logger := utils.Logger()
-	// TODO – use WithCancel for orderly host teardown (which we don't have yet)
 	ctx := context.Background()
 	p2pHost, err := libp2p.New(ctx,
 		libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", self.Port)),
