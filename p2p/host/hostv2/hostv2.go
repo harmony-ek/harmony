@@ -243,7 +243,7 @@ func New(self *p2p.Peer, priKey libp2p_crypto.PrivKey) *HostV2 {
 	h.logger.Debug().
 		Str("port", self.Port).
 		Str("id", p2pHost.ID().Pretty()).
-		Str("addr", listenAddr.String()).
+		Interface("addrs", p2pHost.Addrs()).
 		Str("PubKey", self.ConsensusPubKey.SerializeToHexStr()).
 		Msg("HostV2 is up!")
 
