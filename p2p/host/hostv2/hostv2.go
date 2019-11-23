@@ -211,17 +211,13 @@ func (host *HostV2) Peerstore() libp2p_peerstore.Peerstore {
 
 // New creates a host for p2p communication
 func New(self *p2p.Peer, priKey libp2p_crypto.PrivKey) *HostV2 {
-	listenAddr, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", self.Port))
 	// TODO: Convert to zerolog or internal logger interface
 	logger := utils.Logger()
-	if err != nil {
-		logger.Error().Str("IP", self.IP).Str("Port", self.Port).Msg("New MA Error")
-		return nil
-	}
 	// TODO – use WithCancel for orderly host teardown (which we don't have yet)
 	ctx := context.Background()
 	p2pHost, err := libp2p.New(ctx,
-		libp2p.ListenAddrs(listenAddr), libp2p.Identity(priKey),
+		libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", self.Port)),
+		libp2p.Identity(priKey),
 	)
 	catchError(err)
 	pubsub, err := libp2p_pubsub.NewGossipSub(ctx, p2pHost)
