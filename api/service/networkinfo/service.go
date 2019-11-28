@@ -155,6 +155,10 @@ func (s *Service) Init() error {
 		return fmt.Errorf("[FATAL] error connecting to bootnodes")
 	}
 
+	// Allow some time for bootnode connections to negotiate DHT protocol.
+	// TODO ek – remove after upgrading go-libp2p-kad-dht to v0.3.0+.
+	time.Sleep(3 * time.Second)
+
 	// Bootstrap the DHT. In the default configuration, this spawns a Background
 	// thread that will refresh the peer table every five minutes.
 	utils.Logger().Debug().Msg("Bootstrapping the DHT")
