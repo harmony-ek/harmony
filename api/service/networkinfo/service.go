@@ -124,13 +124,6 @@ func (s *Service) Init() error {
 	defer cancel()
 	utils.Logger().Info().Msg("Init networkinfo service")
 
-	// Bootstrap the DHT. In the default configuration, this spawns a Background
-	// thread that will refresh the peer table every five minutes.
-	utils.Logger().Debug().Msg("Bootstrapping the DHT")
-	if err := s.dht.Bootstrap(ctx); err != nil {
-		return fmt.Errorf("error bootstrap dht: %s", err)
-	}
-
 	var wg sync.WaitGroup
 	if s.bootnodes == nil {
 		// TODO: should've passed in bootnodes through constructor.
@@ -160,6 +153,13 @@ func (s *Service) Init() error {
 
 	if !connected {
 		return fmt.Errorf("[FATAL] error connecting to bootnodes")
+	}
+
+	// Bootstrap the DHT. In the default configuration, this spawns a Background
+	// thread that will refresh the peer table every five minutes.
+	utils.Logger().Debug().Msg("Bootstrapping the DHT")
+	if err := s.dht.Bootstrap(ctx); err != nil {
+		return fmt.Errorf("error bootstrap dht: %s", err)
 	}
 
 	// We use a rendezvous point "shardID" to announce our location.
