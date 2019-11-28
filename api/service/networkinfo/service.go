@@ -169,14 +169,44 @@ func (s *Service) Init() error {
 	// We use a rendezvous point "shardID" to announce our location.
 	utils.Logger().Info().Str("Rendezvous", string(s.Rendezvous)).Msg("Announcing ourselves...")
 	s.discovery = libp2pdis.NewRoutingDiscovery(s.dht)
-	libp2pdis.Advertise(ctx, s.discovery, string(s.Rendezvous))
+	go s.advertise(string(s.Rendezvous))
 
 	// Everyone is beacon client, which means everyone is connected via beacon client topic
 	// 0 is beacon chain FIXME: use a constant
-	libp2pdis.Advertise(ctx, s.discovery, string(nodeconfig.NewClientGroupIDByShardID(0)))
+	go s.advertise(string(nodeconfig.NewClientGroupIDByShardID(0)))
 	utils.Logger().Info().Msg("Successfully announced!")
 
 	return nil
+}
+
+func (s *Service) advertise(t string) {
+	logger := utils.Logger().With().Str("topic", t).Logger()
+	nextDue := time.After(0)
+	for {
+		select {
+		case <-nextDue:
+			startTime := time.Now()
+			logger.Debug().Msg("advertising")
+			ttl, err := s.discovery.Advertise(context.Background(), t)
+			if err != nil {
+				logger.Warn().Err(err).Msg("cannot advertise topic")
+				nextDue = time.After(2 * time.Second)
+				continue
+			}
+			nextDueIn := ttl * 7 / 8
+			switch {
+			case nextDueIn < 2 * time.Second:
+				nextDueIn = 2 * time.Second
+			case nextDueIn > 15 * time.Second:
+				nextDueIn = 15 * time.Second
+			}
+			logger.Debug().TimeDiff("elapsed", time.Now(), startTime).
+				Dur("ttl", ttl).Dur("nextDueIn", nextDueIn).
+				Msg("advertised")
+		case <-s.stopChan:
+			return
+		}
+	}
 }
 
 // Run runs network info.
@@ -276,7 +306,7 @@ func (s *Service) StopService() {
 		return
 	}
 
-	s.stopChan <- struct{}{}
+	close(s.stopChan)
 	<-s.stoppedChan
 	utils.Logger().Info().Msg("Network info service stopped")
 }
