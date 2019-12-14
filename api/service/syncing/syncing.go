@@ -4,20 +4,22 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"reflect"
 	"sort"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/harmony-one/harmony/consensus/engine"
-
 	"github.com/Workiva/go-datastructures/queue"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/pkg/errors"
+
 	"github.com/harmony-one/harmony/api/service/syncing/downloader"
 	pb "github.com/harmony-one/harmony/api/service/syncing/downloader/proto"
 	"github.com/harmony-one/harmony/consensus"
+	"github.com/harmony-one/harmony/consensus/engine"
 	"github.com/harmony-one/harmony/core"
 	"github.com/harmony-one/harmony/core/types"
 	"github.com/harmony-one/harmony/internal/ctxerror"
@@ -431,6 +433,18 @@ func (ss *StateSync) downloadBlocks(bc *core.BlockChain) {
 				var blockObj types.Block
 				// currently only send one block a time
 				err = rlp.DecodeBytes(payload[0], &blockObj)
+
+				// $ date -r 1575573064
+				// Thu Dec  5 11:11:04 PST 2019
+				if err == nil {
+					header := blockObj.Header()
+					if header.Time().Cmp(big.NewInt(1575573064)) >= 0 {
+						err = errors.Errorf("block %d-%d (%#x) too new",
+							header.ShardID(),
+							header.Number(),
+							header.Hash())
+					}
+				}
 
 				if err != nil {
 					count++
